@@ -1,0 +1,674 @@
+{
+  "info": {
+    "_postman_id": "5c1e2a90-4b7d-4a1e-9f3c-1a2b3c4d5e6f",
+    "name": "Marina1 — Slip Management (Steel Thread)",
+    "description": "End-to-end walkthrough of the Storable slip-management API.\n\nRun the requests IN ORDER (use the Collection Runner, or send them top-to-bottom). Each request captures the ids it creates into collection variables, so the whole thread is self-chaining — no manual copying.\n\nThe story:\n1. Prove the system is up and healthy.\n2. Show there are NO marinas yet.\n3. Create a marina, then show it has NO slips.\n4. Create a slip, a person, and their boat.\n5. Prove the guardrails: an oversized boat is rejected, and a slip can't be double-booked.\n6. Lease the slip (a SlipHolding), and watch the slip flip to 'occupied'.\n7. Invoice the holding and take two payments (partial -> paid).\n8. Add a waitlist entry.\n9. End the holding and watch the slip free up again.\n\nPREREQUISITES:\n- Start the API:  .venv\\Scripts\\python.exe main.py   (listens on http://127.0.0.1:5000)\n- Start from a FRESH database so the 'empty' steps read true: delete storable.db before running.\n- baseUrl defaults to http://127.0.0.1:5000 — change the collection variable if yours differs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:5000", "type": "string" },
+    { "key": "marina_id", "value": "" },
+    { "key": "slip_id", "value": "" },
+    { "key": "person_id", "value": "" },
+    { "key": "boat_id", "value": "" },
+    { "key": "oversized_boat_id", "value": "" },
+    { "key": "holding_id", "value": "" },
+    { "key": "invoice_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 · Health check (system is up)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('System reports healthy', () => {",
+              "  pm.expect(pm.response.json().status).to.eql('healthy');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "02 · List marinas (expect none yet)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('No marinas exist yet', () => {",
+              "  pm.expect(pm.response.json().marinas).to.be.an('array').that.is.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/marinas",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas"]
+        }
+      }
+    },
+    {
+      "name": "03 · Create a marina",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const m = pm.response.json();",
+              "pm.collectionVariables.set('marina_id', m.id);",
+              "pm.test('Marina has an id', () => pm.expect(m.id).to.be.a('number'));",
+              "console.log('Created marina id =', m.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Harbor Point Marina\",\n  \"location\": \"Lake Union, Seattle\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/marinas",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas"]
+        }
+      }
+    },
+    {
+      "name": "04 · Get the marina",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Name matches what we created', () => {",
+              "  pm.expect(pm.response.json().name).to.eql('Harbor Point Marina');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/marinas/{{marina_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas", "{{marina_id}}"]
+        }
+      }
+    },
+    {
+      "name": "05 · List slips for the marina (expect none yet)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Marina has no slips yet', () => {",
+              "  pm.expect(pm.response.json().slips).to.be.an('array').that.is.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/marinas/{{marina_id}}/slips",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas", "{{marina_id}}", "slips"]
+        }
+      }
+    },
+    {
+      "name": "06 · Create a slip",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const s = pm.response.json();",
+              "pm.collectionVariables.set('slip_id', s.id);",
+              "pm.test('Slip starts available', () => pm.expect(s.status).to.eql('available'));",
+              "console.log('Created slip id =', s.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"A-14\",\n  \"length_ft\": 40,\n  \"beam_ft\": 14,\n  \"depth_ft\": 8,\n  \"power\": \"50A\",\n  \"covered\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/marinas/{{marina_id}}/slips",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas", "{{marina_id}}", "slips"]
+        }
+      }
+    },
+    {
+      "name": "07 · List slips again (now one)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Marina now has exactly one slip', () => {",
+              "  pm.expect(pm.response.json().slips).to.have.lengthOf(1);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/marinas/{{marina_id}}/slips",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas", "{{marina_id}}", "slips"]
+        }
+      }
+    },
+    {
+      "name": "08 · Create a person",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const p = pm.response.json();",
+              "pm.collectionVariables.set('person_id', p.id);",
+              "console.log('Created person id =', p.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Ada Lovelace\",\n  \"email\": \"ada@example.com\",\n  \"phone\": \"206-555-0142\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/people",
+          "host": ["{{baseUrl}}"],
+          "path": ["people"]
+        }
+      }
+    },
+    {
+      "name": "09 · Add a boat (fits the slip)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.collectionVariables.set('boat_id', b.id);",
+              "pm.test('Boat belongs to the person', () => {",
+              "  pm.expect(b.owner_id).to.eql(Number(pm.collectionVariables.get('person_id')));",
+              "});",
+              "console.log('Created boat id =', b.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Analytical Engine\",\n  \"boat_type\": \"sail\",\n  \"length_ft\": 36,\n  \"beam_ft\": 12,\n  \"draft_ft\": 6,\n  \"registration_no\": \"WN-1843-AL\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/people/{{person_id}}/boats",
+          "host": ["{{baseUrl}}"],
+          "path": ["people", "{{person_id}}", "boats"]
+        }
+      }
+    },
+    {
+      "name": "10 · Add an oversized boat (for the guardrail test)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.collectionVariables.set('oversized_boat_id', b.id);",
+              "console.log('Created oversized boat id =', b.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Leviathan\",\n  \"boat_type\": \"power\",\n  \"length_ft\": 60,\n  \"beam_ft\": 20,\n  \"draft_ft\": 9\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/people/{{person_id}}/boats",
+          "host": ["{{baseUrl}}"],
+          "path": ["people", "{{person_id}}", "boats"]
+        }
+      }
+    },
+    {
+      "name": "11 · Guardrail: lease with oversized boat (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Oversized boat is rejected (400)', () => pm.response.to.have.status(400));",
+              "pm.test('Error explains the fit failure', () => {",
+              "  pm.expect(pm.response.json().error).to.include('does not fit');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"person_id\": {{person_id}},\n  \"boat_id\": {{oversized_boat_id}},\n  \"start_date\": \"2026-05-01\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/slips/{{slip_id}}/holdings",
+          "host": ["{{baseUrl}}"],
+          "path": ["slips", "{{slip_id}}", "holdings"]
+        }
+      }
+    },
+    {
+      "name": "12 · Lease the slip (create a holding)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const h = pm.response.json();",
+              "pm.collectionVariables.set('holding_id', h.id);",
+              "pm.test('Holding is active', () => pm.expect(h.status).to.eql('active'));",
+              "console.log('Created holding id =', h.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"person_id\": {{person_id}},\n  \"boat_id\": {{boat_id}},\n  \"start_date\": \"2026-05-01\",\n  \"end_date\": \"2026-10-01\",\n  \"season\": \"2026\",\n  \"rate_amount\": 2400,\n  \"rate_period\": \"seasonal\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/slips/{{slip_id}}/holdings",
+          "host": ["{{baseUrl}}"],
+          "path": ["slips", "{{slip_id}}", "holdings"]
+        }
+      }
+    },
+    {
+      "name": "13 · Get the slip (now occupied)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Slip is now occupied', () => {",
+              "  pm.expect(pm.response.json().status).to.eql('occupied');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/slips/{{slip_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["slips", "{{slip_id}}"]
+        }
+      }
+    },
+    {
+      "name": "14 · Guardrail: double-book the slip (expect 409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Double-booking is rejected (409)', () => pm.response.to.have.status(409));",
+              "pm.test('Error mentions the active holding', () => {",
+              "  pm.expect(pm.response.json().error).to.include('active holding');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"person_id\": {{person_id}},\n  \"start_date\": \"2026-06-01\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/slips/{{slip_id}}/holdings",
+          "host": ["{{baseUrl}}"],
+          "path": ["slips", "{{slip_id}}", "holdings"]
+        }
+      }
+    },
+    {
+      "name": "15 · List the person's holdings",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Person holds at least one slip', () => {",
+              "  pm.expect(pm.response.json().holdings.length).to.be.above(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/people/{{person_id}}/holdings",
+          "host": ["{{baseUrl}}"],
+          "path": ["people", "{{person_id}}", "holdings"]
+        }
+      }
+    },
+    {
+      "name": "16 · Invoice the holding",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const inv = pm.response.json();",
+              "pm.collectionVariables.set('invoice_id', inv.id);",
+              "pm.test('Invoice starts unpaid', () => pm.expect(inv.status).to.eql('unpaid'));",
+              "pm.test('Balance equals amount due', () => pm.expect(inv.balance).to.eql(2400));",
+              "console.log('Created invoice id =', inv.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount_due\": 2400,\n  \"due_date\": \"2026-05-15\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/holdings/{{holding_id}}/invoices",
+          "host": ["{{baseUrl}}"],
+          "path": ["holdings", "{{holding_id}}", "invoices"]
+        }
+      }
+    },
+    {
+      "name": "17 · Pay part of the invoice (expect status 'partial')",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const inv = pm.response.json().invoice;",
+              "pm.test('Invoice is now partial', () => pm.expect(inv.status).to.eql('partial'));",
+              "pm.test('Balance is 1400 remaining', () => pm.expect(inv.balance).to.eql(1400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 1000,\n  \"method\": \"card\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/invoices/{{invoice_id}}/payments",
+          "host": ["{{baseUrl}}"],
+          "path": ["invoices", "{{invoice_id}}", "payments"]
+        }
+      }
+    },
+    {
+      "name": "18 · Pay the remainder (expect status 'paid')",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "const inv = pm.response.json().invoice;",
+              "pm.test('Invoice is now paid', () => pm.expect(inv.status).to.eql('paid'));",
+              "pm.test('Balance is zero', () => pm.expect(inv.balance).to.eql(0));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 1400,\n  \"method\": \"ach\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/invoices/{{invoice_id}}/payments",
+          "host": ["{{baseUrl}}"],
+          "path": ["invoices", "{{invoice_id}}", "payments"]
+        }
+      }
+    },
+    {
+      "name": "19 · Get the invoice (paid, with both payments)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const inv = pm.response.json();",
+              "pm.test('Invoice is paid in full', () => pm.expect(inv.status).to.eql('paid'));",
+              "pm.test('Two payments are recorded', () => pm.expect(inv.payments).to.have.lengthOf(2));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/invoices/{{invoice_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["invoices", "{{invoice_id}}"]
+        }
+      }
+    },
+    {
+      "name": "20 · Add a waitlist entry",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+              "pm.test('Entry is waiting', () => pm.expect(pm.response.json().status).to.eql('waiting'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"person_id\": {{person_id}},\n  \"min_length_ft\": 30,\n  \"power\": \"30A\",\n  \"notes\": \"Wants a covered slip when one opens\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/marinas/{{marina_id}}/waitlist",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas", "{{marina_id}}", "waitlist"]
+        }
+      }
+    },
+    {
+      "name": "21 · List the waitlist",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Waitlist has one entry', () => {",
+              "  pm.expect(pm.response.json().waitlist).to.have.lengthOf(1);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/marinas/{{marina_id}}/waitlist",
+          "host": ["{{baseUrl}}"],
+          "path": ["marinas", "{{marina_id}}", "waitlist"]
+        }
+      }
+    },
+    {
+      "name": "22 · End the holding (frees the slip)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Holding is ended', () => pm.expect(pm.response.json().status).to.eql('ended'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"ended\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/holdings/{{holding_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["holdings", "{{holding_id}}"]
+        }
+      }
+    },
+    {
+      "name": "23 · Get the slip (available again)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Slip is available again', () => {",
+              "  pm.expect(pm.response.json().status).to.eql('available');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/slips/{{slip_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["slips", "{{slip_id}}"]
+        }
+      }
+    }
+  ]
+}
