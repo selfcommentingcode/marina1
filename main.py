@@ -4,21 +4,20 @@
 #   .venv\Scripts\python.exe main.py
 # Then visit http://127.0.0.1:5000/
 #
-# The database file (storable.db) is created automatically on first run.
-# To point at PostgreSQL instead, set the DATABASE_URL environment variable.
+# The database file (persistence/storable.db) is created automatically on first
+# run. To point at PostgreSQL instead, set the DATABASE_URL environment variable
+# (or pass a url to create_app).
 
 from datetime import date
 
-from flask import Flask, jsonify, request
+from flask import Blueprint, Flask, current_app, jsonify, request
 
-from db import SessionLocal, init_db
-from models import (
+from persistence.db import default_database_url, init_db, make_engine, make_session_factory
+from models.models import (
     BOAT_TYPES,
     HOLDING_STATUSES,
     POWER_OPTIONS,
-    PRONOUNS,
     RATE_PERIODS,
-    SALUTATIONS,
     SLIP_STATUSES,
     WAITLIST_STATUSES,
     Boat,
@@ -31,10 +30,8 @@ from models import (
     WaitlistEntry,
 )
 
-app = Flask(__name__)
+api = Blueprint("api", __name__)
 
-# Create tables if they don't exist yet. Safe to run on every startup.
-init_db()
 
 # --- Small helpers -----------------------------------------------------------
 class ApiError(Exception):
@@ -44,9 +41,14 @@ class ApiError(Exception):
         self.status = status
 
 
-@app.errorhandler(ApiError)
+@api.app_errorhandler(ApiError)
 def _handle_api_error(err):
     return jsonify(error=err.message), err.status
+
+
+def get_session():
+    """Open a new Session from the factory the app was built with."""
+    return current_app.config["SESSION_FACTORY"]()
 
 
 def body():
@@ -81,55 +83,50 @@ def get_or_404(session, model, obj_id, label):
 
 
 # --- Meta --------------------------------------------------------------------
-@app.route("/")
+@api.route("/")
 def index():
     return jsonify(status="ok", message="Storable slip-management API is running.")
 
 
-@app.route("/health")
+@api.route("/health")
 def health():
     return jsonify(status="healthy")
 
 
 # --- Marinas -----------------------------------------------------------------
-@app.route("/marinas", methods=["POST"])
+@api.route("/marinas", methods=["POST"])
 def create_marina():
     data = body()
     require(data, "name")
-    with SessionLocal() as session:
-        owner_id = data.get("owner_id")
-        if owner_id is not None:
-            get_or_404(session, Person, owner_id, "owner")
-        marina = Marina(
-            name=data["name"], location=data.get("location"), owner_id=owner_id
-        )
+    with get_session() as session:
+        marina = Marina(name=data["name"], location=data.get("location"))
         session.add(marina)
         session.commit()
         return jsonify(marina.to_dict()), 201
 
 
-@app.route("/marinas", methods=["GET"])
+@api.route("/marinas", methods=["GET"])
 def list_marinas():
-    with SessionLocal() as session:
+    with get_session() as session:
         marinas = session.query(Marina).order_by(Marina.id).all()
         return jsonify(marinas=[m.to_dict() for m in marinas])
 
 
-@app.route("/marinas/<int:marina_id>", methods=["GET"])
+@api.route("/marinas/<int:marina_id>", methods=["GET"])
 def get_marina(marina_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         marina = get_or_404(session, Marina, marina_id, "marina")
         return jsonify(marina.to_dict())
 
 
 # --- Slips -------------------------------------------------------------------
-@app.route("/marinas/<int:marina_id>/slips", methods=["POST"])
+@api.route("/marinas/<int:marina_id>/slips", methods=["POST"])
 def create_slip(marina_id):
     data = body()
     require(data, "identifier", "length_ft", "beam_ft")
     check_enum(data.get("power"), POWER_OPTIONS, "power")
     check_enum(data.get("status"), SLIP_STATUSES, "status")
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Marina, marina_id, "marina")
         slip = Slip(
             marina_id=marina_id,
@@ -146,11 +143,11 @@ def create_slip(marina_id):
         return jsonify(slip.to_dict()), 201
 
 
-@app.route("/marinas/<int:marina_id>/slips", methods=["GET"])
+@api.route("/marinas/<int:marina_id>/slips", methods=["GET"])
 def list_slips(marina_id):
     status = request.args.get("status")
     min_length = request.args.get("min_length", type=float)
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Marina, marina_id, "marina")
         q = session.query(Slip).filter_by(marina_id=marina_id)
         if status:
@@ -161,72 +158,41 @@ def list_slips(marina_id):
         return jsonify(slips=[s.to_dict() for s in slips])
 
 
-@app.route("/slips/<int:slip_id>", methods=["GET"])
+@api.route("/slips/<int:slip_id>", methods=["GET"])
 def get_slip(slip_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         slip = get_or_404(session, Slip, slip_id, "slip")
         return jsonify(slip.to_dict())
 
 
 # --- People ------------------------------------------------------------------
-@app.route("/people", methods=["POST"])
+@api.route("/people", methods=["POST"])
 def create_person():
     data = body()
     require(data, "name")
-    check_enum(data.get("salutation"), SALUTATIONS, "salutation")
-    check_enum(data.get("pronouns"), PRONOUNS, "pronouns")
-    with SessionLocal() as session:
+    with get_session() as session:
         person = Person(
-            name=data["name"],
-            email=data.get("email"),
-            phone=data.get("phone"),
-            salutation=data.get("salutation"),
-            pronouns=data.get("pronouns"),
+            name=data["name"], email=data.get("email"), phone=data.get("phone")
         )
         session.add(person)
         session.commit()
         return jsonify(person.to_dict()), 201
 
 
-@app.route("/people", methods=["GET"])
+@api.route("/people", methods=["GET"])
 def list_people():
-    with SessionLocal() as session:
+    with get_session() as session:
         people = session.query(Person).order_by(Person.id).all()
         return jsonify(people=[p.to_dict() for p in people])
 
 
-@app.route("/people/<int:person_id>", methods=["GET"])
-def get_person(person_id):
-    with SessionLocal() as session:
-        person = get_or_404(session, Person, person_id, "person")
-        return jsonify(person.to_dict())
-
-
-@app.route("/people/<int:person_id>", methods=["PATCH"])
-def update_person(person_id):
-    """Update a person in one place; the change is reflected everywhere the
-    person is referenced (owned marinas, boats, holdings, waitlist entries)."""
-    data = body()
-    if "name" in data and not data["name"]:
-        raise ApiError("name cannot be empty")
-    check_enum(data.get("salutation"), SALUTATIONS, "salutation")
-    check_enum(data.get("pronouns"), PRONOUNS, "pronouns")
-    with SessionLocal() as session:
-        person = get_or_404(session, Person, person_id, "person")
-        for field in ("name", "email", "phone", "salutation", "pronouns"):
-            if field in data:
-                setattr(person, field, data[field])
-        session.commit()
-        return jsonify(person.to_dict())
-
-
 # --- Boats -------------------------------------------------------------------
-@app.route("/people/<int:person_id>/boats", methods=["POST"])
+@api.route("/people/<int:person_id>/boats", methods=["POST"])
 def create_boat(person_id):
     data = body()
     require(data, "name", "length_ft")
     check_enum(data.get("boat_type"), BOAT_TYPES, "boat_type")
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Person, person_id, "person")
         boat = Boat(
             owner_id=person_id,
@@ -243,9 +209,9 @@ def create_boat(person_id):
         return jsonify(boat.to_dict()), 201
 
 
-@app.route("/people/<int:person_id>/boats", methods=["GET"])
+@api.route("/people/<int:person_id>/boats", methods=["GET"])
 def list_boats(person_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Person, person_id, "person")
         boats = session.query(Boat).filter_by(owner_id=person_id).order_by(Boat.id).all()
         return jsonify(boats=[b.to_dict() for b in boats])
@@ -263,7 +229,7 @@ def _fits(boat, slip):
     return True, None
 
 
-@app.route("/slips/<int:slip_id>/holdings", methods=["POST"])
+@api.route("/slips/<int:slip_id>/holdings", methods=["POST"])
 def create_holding(slip_id):
     data = body()
     require(data, "person_id", "start_date")
@@ -271,7 +237,7 @@ def create_holding(slip_id):
     start_date = parse_date(data["start_date"], "start_date")
     end_date = parse_date(data.get("end_date"), "end_date")
 
-    with SessionLocal() as session:
+    with get_session() as session:
         slip = get_or_404(session, Slip, slip_id, "slip")
         person = get_or_404(session, Person, data["person_id"], "person")
 
@@ -312,9 +278,9 @@ def create_holding(slip_id):
         return jsonify(holding.to_dict()), 201
 
 
-@app.route("/slips/<int:slip_id>/holdings", methods=["GET"])
+@api.route("/slips/<int:slip_id>/holdings", methods=["GET"])
 def list_slip_holdings(slip_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Slip, slip_id, "slip")
         holdings = (
             session.query(SlipHolding)
@@ -325,9 +291,9 @@ def list_slip_holdings(slip_id):
         return jsonify(holdings=[h.to_dict() for h in holdings])
 
 
-@app.route("/people/<int:person_id>/holdings", methods=["GET"])
+@api.route("/people/<int:person_id>/holdings", methods=["GET"])
 def list_person_holdings(person_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Person, person_id, "person")
         holdings = (
             session.query(SlipHolding)
@@ -338,11 +304,11 @@ def list_person_holdings(person_id):
         return jsonify(holdings=[h.to_dict() for h in holdings])
 
 
-@app.route("/holdings/<int:holding_id>", methods=["PATCH"])
+@api.route("/holdings/<int:holding_id>", methods=["PATCH"])
 def update_holding(holding_id):
     data = body()
     check_enum(data.get("status"), HOLDING_STATUSES, "status")
-    with SessionLocal() as session:
+    with get_session() as session:
         holding = get_or_404(session, SlipHolding, holding_id, "holding")
         new_status = data.get("status")
         if new_status == "ended":
@@ -358,11 +324,11 @@ def update_holding(holding_id):
 
 
 # --- Billing -----------------------------------------------------------------
-@app.route("/holdings/<int:holding_id>/invoices", methods=["POST"])
+@api.route("/holdings/<int:holding_id>/invoices", methods=["POST"])
 def create_invoice(holding_id):
     data = body()
     require(data, "amount_due")
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, SlipHolding, holding_id, "holding")
         invoice = Invoice(
             holding_id=holding_id,
@@ -374,20 +340,20 @@ def create_invoice(holding_id):
         return jsonify(invoice.to_dict()), 201
 
 
-@app.route("/invoices/<int:invoice_id>", methods=["GET"])
+@api.route("/invoices/<int:invoice_id>", methods=["GET"])
 def get_invoice(invoice_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         invoice = get_or_404(session, Invoice, invoice_id, "invoice")
         data = invoice.to_dict()
         data["payments"] = [p.to_dict() for p in invoice.payments]
         return jsonify(data)
 
 
-@app.route("/invoices/<int:invoice_id>/payments", methods=["POST"])
+@api.route("/invoices/<int:invoice_id>/payments", methods=["POST"])
 def create_payment(invoice_id):
     data = body()
     require(data, "amount")
-    with SessionLocal() as session:
+    with get_session() as session:
         invoice = get_or_404(session, Invoice, invoice_id, "invoice")
         payment = Payment(
             invoice_id=invoice_id,
@@ -413,13 +379,13 @@ def create_payment(invoice_id):
 
 
 # --- Waitlist ----------------------------------------------------------------
-@app.route("/marinas/<int:marina_id>/waitlist", methods=["POST"])
+@api.route("/marinas/<int:marina_id>/waitlist", methods=["POST"])
 def create_waitlist_entry(marina_id):
     data = body()
     require(data, "person_id")
     check_enum(data.get("power"), POWER_OPTIONS, "power")
     check_enum(data.get("status"), WAITLIST_STATUSES, "status")
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Marina, marina_id, "marina")
         get_or_404(session, Person, data["person_id"], "person")
         entry = WaitlistEntry(
@@ -435,9 +401,9 @@ def create_waitlist_entry(marina_id):
         return jsonify(entry.to_dict()), 201
 
 
-@app.route("/marinas/<int:marina_id>/waitlist", methods=["GET"])
+@api.route("/marinas/<int:marina_id>/waitlist", methods=["GET"])
 def list_waitlist(marina_id):
-    with SessionLocal() as session:
+    with get_session() as session:
         get_or_404(session, Marina, marina_id, "marina")
         entries = (
             session.query(WaitlistEntry)
@@ -448,5 +414,25 @@ def list_waitlist(marina_id):
         return jsonify(waitlist=[e.to_dict() for e in entries])
 
 
+# --- Application factory -----------------------------------------------------
+def create_app(database_url=None):
+    """Build a Flask app bound to a database.
+
+    Pass ``database_url`` to inject a datastore (tests use an in-memory SQLite
+    URL); otherwise it resolves from DATABASE_URL or the default SQLite file.
+    """
+    app = Flask(__name__)
+    url = database_url or default_database_url()
+    engine = make_engine(url)
+
+    app.config["DATABASE_URL"] = url
+    app.config["ENGINE"] = engine
+    app.config["SESSION_FACTORY"] = make_session_factory(engine)
+
+    init_db(engine)
+    app.register_blueprint(api)
+    return app
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    create_app().run(host="127.0.0.1", port=5000, debug=True)

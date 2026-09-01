@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from db import Base
+from persistence.db import Base
 
 # --- Enum-like value sets (validated in the route layer) ---------------------
 SLIP_STATUSES = ("available", "occupied", "reserved", "out_of_service")

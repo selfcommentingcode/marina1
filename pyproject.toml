@@ -1,0 +1,20 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Put the project root on sys.path so tests can `from main import create_app`
+# and reach the persistence/ and models/ packages.
+pythonpath = ["."]
+
+[tool.coverage.run]
+# Branch coverage (not just line): records whether both sides of every
+# conditional were taken. This is what surfaces half-tested guardrails.
+branch = true
+source = ["main", "persistence", "models"]
+omit = ["tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "if __name__ == .__main__.:",
+    "pragma: no cover",
+]

@@ -11,7 +11,13 @@ env/
 
 # Local SQLite database (regenerated from the models on first run)
 *.db
-storable.db
+persistence/storable.db
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # IDE / editor
 .idea/
