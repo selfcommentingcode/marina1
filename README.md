@@ -126,7 +126,7 @@ marina1/
 | `POST` | `/invoices/{id}/payments` | Record a payment |
 | `POST` / `GET` | `/marinas/{id}/waitlist` | Join / list the waitlist |
 
-## Data models
+## Data model
 
 ```mermaid
 erDiagram
