@@ -1,0 +1,22 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local SQLite database (regenerated from the models on first run)
+*.db
+storable.db
+
+# IDE / editor
+.idea/
+.vscode/
+
+# OS cruft
+.DS_Store
+Thumbs.db
