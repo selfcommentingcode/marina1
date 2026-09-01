@@ -1,7 +1,7 @@
 # Marina1 — Slip Management API
 
-A small, well-tested REST API for running a boat marina: its slips, the people and
-boats that use them, the seasonal **leases** that tie a boat to a slip, plus billing
+A small REST API for running a boat marina: slips, the people and
+boats that use them, the seasonal leases that tie a boat to a slip, plus billing
 and a waitlist.
 
 ![tests](https://github.com/selfcommentingcode/marina1/actions/workflows/tests.yml/badge.svg)
@@ -13,20 +13,16 @@ and a waitlist.
 ## Executive summary
 
 Marinas rent out **slips** (parking spots for boats) on seasonal leases, bill for them,
-and keep a waitlist when full. Marina1 models that domain as a clean relational API:
-eight related entities, guardrails that enforce the real-world rules (a boat must
-physically fit its slip; a slip can't be double-booked), and a persistence layer that
-runs on SQLite today and PostgreSQL tomorrow with a one-line change. It ships with a
-runnable end-to-end demo and a 99%-branch-coverage test suite.
+and keep a waitlist when full. Some guardrails include: a boat must physically fit its slip, and a slip can't be double-booked.
+There is a persistence layer that currently runs on SQLite, but can be upgraded to PostgreSQL with one-line change. It ships with a
+
+Currently at 99% branch-coverage.
 
 ## Demonstration
 
-**One-command, 23-step walkthrough.** Import [`postman/Marina1.postman_collection.json`](postman/Marina1.postman_collection.json)
-into Postman and hit **Run** — it self-chains from an empty system all the way through
-leasing a slip, billing it, and freeing it, asserting each step green (including the
-guardrail rejections).
+**Postman**: [`postman/Marina1.postman_collection.json`](postman/Marina1.postman_collection.json)
 
-**Or from the shell:**
+**Or from the command line:**
 
 ```bash
 # 1. Is it up?
@@ -85,9 +81,7 @@ pytest --cov --cov-branch --cov-report=html    # branch coverage -> htmlcov/inde
 pytest tests/test_billing.py::test_payment_partial_then_paid   # a single test
 ```
 
-**67 tests, 99% branch coverage** — the suite deliberately targets the error and edge
-branches (fit checks, double-booking, the invoice status ladder, every 400/404). CI runs
-it on each push via GitHub Actions and reports to Codecov.
+**67 tests, 99% branch coverage**
 
 ## Implementation details
 
@@ -133,11 +127,6 @@ marina1/
 | `POST` / `GET` | `/marinas/{id}/waitlist` | Join / list the waitlist |
 
 ## Data model
-
-The relationships below render as a diagram on GitHub. `PK` = primary key, `FK` = foreign
-key. Crow's-foot ends read as *exactly one* (`||`), *zero-or-one* (`|o`), or
-*zero-or-more* (`o{`) — so `MARINA ||--o{ SLIP` means one marina has many slips, and each
-slip belongs to exactly one marina.
 
 ```mermaid
 erDiagram
