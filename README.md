@@ -16,8 +16,6 @@ Marinas rent out **slips** (parking spots for boats) on seasonal leases, bill fo
 and keep a waitlist when full. Some guardrails include: a boat must physically fit its slip, and a slip can't be double-booked.
 There is a persistence layer that currently runs on SQLite, but can be upgraded to PostgreSQL with one-line change. It ships with a
 
-Currently at 99% branch-coverage.
-
 ## Demonstration
 
 **Postman**: [`postman/Marina1.postman_collection.json`](postman/Marina1.postman_collection.json)
@@ -80,8 +78,6 @@ pytest                                         # 67 tests
 pytest --cov --cov-branch --cov-report=html    # branch coverage -> htmlcov/index.html
 pytest tests/test_billing.py::test_payment_partial_then_paid   # a single test
 ```
-
-**67 tests, 99% branch coverage**
 
 ## Implementation details
 

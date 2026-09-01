@@ -29,6 +29,15 @@ def test_make_engine_creates_missing_parent_dir(tmp_path):
         assert conn.execute(text("select 1")).scalar() == 1
 
 
+def test_make_engine_non_file_sqlite_skips_parent_dir():
+    # "sqlite://" (no path) is an in-memory database that does NOT match the
+    # 'sqlite:///<file>' form, so make_engine must skip the parent-dir creation
+    # branch entirely. This exercises the False side of that conditional.
+    engine = db.make_engine("sqlite://")
+    with engine.connect() as conn:
+        assert conn.execute(text("select 1")).scalar() == 1
+
+
 def test_make_engine_memory_shares_one_connection():
     # StaticPool means data written via one session is visible to the next,
     # which is exactly why in-memory works for the test suite.
